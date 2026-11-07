@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>锂电池热失控预警系统</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 960px;
+            margin: 40px auto;
+            padding: 0 16px;
+        }
+        h1 {
+            font-size: 1.4rem;
+        }
+        h2 {
+            font-size: 1.2rem;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 1rem;
+            margin: 0 0 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .answer {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+        }
+        .answer-meta {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+        }
+        .answer-text {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        .answer.error {
+            color: #b00020;
+            border-color: #b00020;
+        }
+
+        /* AI 助手主控台（页面顶部） */
+        #agent-chat {
+            max-height: 320px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid var(--gridline);
+            border-radius: 4px;
+            padding: 4px 12px;
+            margin-top: 8px;
+        }
+        #agent-chat .agent-q {
+            font-weight: 600;
+            margin: 10px 0 4px;
+        }
+        #agent-input {
+            flex: 1 1 300px;
+            min-width: 0;
+        }
+
+        /* 图表区：浅色表面 + 图表组件色板 */
+        .viz-root {
+            color-scheme: light;
+            --surface-1: #fcfcfb;
+            --text-primary: #0b0b0b;
+            --text-secondary: #52514e;
+            --muted: #898781;
+            --gridline: #e1e0d9;
+            --baseline: #c3c2b7;
+            --series-temp: #2a78d6;      /* 温度：蓝 */
+            --series-humidity: #1baf7a;  /* 湿度：青绿 */
+            --series-voltage: #eda100;   /* 电压：琥珀 */
+            --ok: #1baf7a;               /* 状态色：正常 */
+            --warn: #eda100;             /* 状态色：警示/暂不可用 */
+            --err: #b00020;              /* 状态色：错误/高关注 */
+            background: var(--surface-1);
+            border: 1px solid rgba(11, 11, 11, 0.10);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .filter-row button {
+            padding: 5px 12px;
+            font-size: 0.9rem;
+        }
+        .filter-row input, .filter-row select {
+            padding: 5px 8px;
+            font-size: 0.9rem;
+            border: 1px solid var(--baseline);
+            border-radius: 4px;
+            background: #fff;
+            color: var(--text-primary);
+        }
+        .chart-note {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin: 8px 0 0;
+        }
+        .chart-note.error {
+            color: var(--err);
+        }
+        .chart-note.warn {
+            color: var(--warn);
+            font-weight: 600;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border: 1px solid #6250d6;
+            color: #6250d6;
+            border-radius: 999px;
+            font-size: 0.8rem;
+        }
+        .chart-card {
+            margin-top: 16px;
+        }
+        .chart-card h3 {
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            margin: 0 0 6px;
+        }
+        .chart-card .canvas-wrap {
+            position: relative;
+            height: 240px;
+        }
+        .table-wrap {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--gridline);
+            border-radius: 4px;
+            margin-top: 16px;
+        }
+        .table-wrap table {
+            font-size: 0.85rem;
+        }
+        .table-wrap th {
+            position: sticky;
+            top: 0;
+            background: var(--surface-1);
+            z-index: 1;
+        }
+        .table-wrap td {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ---- Tab 导航 ---- */
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            margin-top: 28px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab-btn {
+            border: none;
+            background: none;
+            padding: 10px 18px;
+            font-size: 1rem;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            border-radius: 0;
+        }
+        .tab-btn.active {
+            color: #0b0b0b;
+            font-weight: 600;
+            border-bottom-color: #2a78d6;
+        }
+        .tab-panel {
+            display: none;
+        }
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* ---- 状态总览 ---- */
+        .ov-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .ov-badge {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .ov-badge.watch { background: var(--err); }
+        .ov-badge.normal { background: var(--ok); }
+        .ov-badge.unknown { background: #898781; }
+        .run-meta {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .judgment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .judge-card {
+            border: 1px solid var(--gridline);
+            border-radius: 6px;
+            padding: 10px 12px;
+            background: #fff;
+        }
+        .judge-card h4 {
+            margin: 0 0 6px;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+        .judge-card p {
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+        .ratio-track {
+            height: 8px;
+            background: var(--gridline);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+        .ratio-fill {
+            height: 100%;
+            background: var(--ok);
+        }
+
+        /* ---- 证据空间 ---- */
+        .ev-card {
+            border: 1px solid var(--gridline);
+            border-radius: 6px;
+            background: #fff;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+        .ev-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface-1);
+            border-bottom: 1px solid var(--gridline);
+        }
+        .ev-type {
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        .ev-status {
+            padding: 1px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            color: #fff;
+        }
+        .ev-status.ok { background: var(--ok); }
+        .ev-status.unavailable { background: var(--warn); }
+        .ev-status.error { background: var(--err); }
+        .ev-time {
+            margin-left: auto;
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+        .ev-body {
+            padding: 10px 12px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .ev-error {
+            color: var(--err);
+            font-size: 0.9rem;
+        }
+        .chip {
+            display: inline-block;
+            padding: 1px 10px;
+            margin: 2px 4px 2px 0;
+            border-radius: 999px;
+            border: 1px solid #bbb;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+        .pred-badge {
+            padding: 1px 12px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            color: #fff;
+            font-weight: 600;
+        }
+        .pred-badge.WATCH { background: var(--err); }
+        .pred-badge.NORMAL { background: var(--ok); }
+        .pred-badge.UNKNOWN { background: #898781; }
+        .ev-body details {
+            margin: 4px 0;
+        }
+        .ev-body summary {
+            cursor: pointer;
+            color: #2a78d6;
+            font-size: 0.85rem;
+        }
+        .ev-body details p {
+            margin: 6px 0 0;
+            padding: 8px 10px;
+            background: var(--surface-1);
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-size: 0.85rem;
+        }
+        .ev-body details.ev-raw pre {
+            margin: 6px 0 0;
+            padding: 8px 10px;
+            background: var(--surface-1);
+            border-radius: 4px;
+            font-size: 0.78rem;
+            max-height: 240px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* ---- 场景回放与对比 ---- */
+        #rep-table {
+            font-size: 0.85rem;
+        }
+        #rep-table .row-detail td {
+            background: #fff;
+        }
+        .cmp-table {
+            font-size: 0.85rem;
+        }
+        .cmp-table th, .cmp-table td {
+            vertical-align: top;
+        }
+        .cmp-table tr.diff th, .cmp-table tr.diff td {
+            background: #fdf3dc;
+        }
+        .cmp-table tr.cmp-section th {
+            background: #eef2f7;
+            font-weight: 600;
+            text-align: left;
+            padding: 6px 8px;
+        }
+        .cmp-table .cmp-exp summary {
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        .cmp-table .cmp-exp p {
+            margin: 6px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="edge-status" style="position:fixed;top:12px;right:16px;font-size:13px;z-index:99;" title="STM32-EDGE-01">
+        <span id="edge-dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#95a5a6;margin-right:6px;"></span>
+        硬件边缘节点：<span id="edge-text">检测中</span>
+        <span id="edge-humidity" style="margin-left:10px;color:#666;"></span>
+    </div>
+    <h1>锂电池热失控预警系统</h1>
+    <p id="state-name">当前模拟状态：{{ name }}（电池温度 {{ temperature }} °C / 电池包内湿度 {{ humidity }} % / 电池电压 {{ voltage }} V）</p>
+
+    <h2>AI 助手主控台</h2>
+    <div class="viz-root" id="agent-console">
+        <p class="chart-note">主控台已接入工具调用：可查询电池舱环境、历史数据、未来天气（需说明地点）、锂电池安全知识、电池舱摄像头画面，AI 会自动选择合适的工具并查询真实数据。</p>
+        <div id="agent-chat"></div>
+        <div class="filter-row" style="margin-top: 8px;">
+            <input type="text" id="agent-input" placeholder="例如：帮我查一下最近 24 小时的电池温度变化趋势"
+                   onkeydown="if (event.key === 'Enter') sendAgent()">
+            <button id="agent-send-btn" onclick="sendAgent()">发送</button>
+        </div>
+    </div>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">状态总览</button>
+        <button class="tab-btn" data-tab="evolution" onclick="switchTab('evolution')">状态演化</button>
+        <button class="tab-btn" data-tab="evidence" onclick="switchTab('evidence')">证据空间</button>
+        <button class="tab-btn" data-tab="replay" onclick="switchTab('replay')">场景回放与对比</button>
+    </div>
+
+    <!-- ============ Tab 1：状态总览 ============ -->
+    <section id="tab-overview" class="tab-panel active">
+        <div class="viz-root">
+            <h3 id="b01-title">电池舱模拟状态（B01）</h3>
+            <table>
+                <tr><th>状态</th><td id="ov-state-name">{{ name }}</td></tr>
+                <tr><th>电池温度</th><td id="ov-temperature">{{ temperature }} °C</td></tr>
+                <tr><th>电池包内湿度</th><td id="ov-humidity">{{ humidity }} %</td></tr>
+                <tr><th>电池电压</th><td id="ov-voltage">{{ voltage }} V</td></tr>
+                <tr><th>source_type</th><td id="ov-source-type">{{ source_type }}</td></tr>
+            </table>
+            <div class="filter-row" style="margin-top: 12px;">
+                <button id="toggle-btn" onclick="toggleState()">切换到 {{ next_name }}</button>
+            </div>
+        </div>
+
+        <div class="viz-root">
+            <h3>统一分析（/analyze：5 工具 + ML 预测 → 规则判断 → LLM 解释）<span style="margin-left:10px;font-size:13px;font-weight:normal;color:#888;">数据模式：云端黑匣子下采样回溯（30min/点）</span></h3>
+            <p style="margin:2px 0 8px;font-size:11px;color:#999;">* Cloud Black-Box Retrospective Analysis (Downsampled 30min)</p>
+            <div class="filter-row">
+                <input id="an-location" value="EV-001" placeholder="车辆编号（如：EV-001）" aria-label="车辆编号" style="width: 130px;">
+                <input type="datetime-local" id="an-time" aria-label="分析时刻（可选）">
+                <select id="an-scenario" aria-label="场景测试" onchange="runAnalysis()">
+                    <option value="">真实数据（不注入场景）</option>
+                    <option value="S1">S1 正常基线</option>
+                    <option value="S2">S2 热失控前兆</option>
+                    <option value="S3">S3 外部扰动</option>
+                    <option value="S4">S4 证据分歧</option>
+                    <option value="S5">S5 证据缺失</option>
+                </select>
+                <button id="an-btn" onclick="runAnalysis()">运行统一分析</button>
+            </div>
+            <p class="chart-note">分析时刻留空 = 按库中最新数据；指定时刻 = 历史与 ML 窗口均截至该时刻回溯。切换场景下拉框会立即运行一次该场景分析；每次运行生成独立 run_id 并写入 analysis_runs 表。</p>
+            <div id="overview-result"></div>
+        </div>
+    </section>
+
+    <!-- ============ Tab 2：状态演化 ============ -->
+    <section id="tab-evolution" class="tab-panel">
+        <div class="viz-root">
+            <div class="filter-row">
+                <button id="evo-refresh" onclick="renderEvolution()">加载最新分析</button>
+            </div>
+            <p id="evo-note" class="chart-note">加载中…</p>
+            <div class="chart-card">
+                <h3>电池温度 (°C) — 标注关键变化节点与外部天气介入</h3>
+                <div class="canvas-wrap"><canvas id="chart-evo-temp"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>电池包内湿度 (%)</h3>
+                <div class="canvas-wrap"><canvas id="chart-evo-humidity"></canvas></div>
+            </div>
+            <div class="table-wrap">
+                <table id="evo-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>电池温度 (°C)</th>
+                            <th>电池包内湿度 (%)</th>
+                            <th>电池电压 (V)</th>
+                            <th>来源</th>
+                        </tr>
+                    </thead>
+                    <tbody id="evo-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ Tab 3：证据空间 ============ -->
+    <section id="tab-evidence" class="tab-panel">
+        <div class="viz-root">
+            <div class="filter-row">
+                <button id="evi-refresh" onclick="renderEvidence()">刷新</button>
+            </div>
+            <p id="evi-note" class="chart-note">加载中…</p>
+            <div id="evidence-list"></div>
+        </div>
+    </section>
+
+    <!-- ============ Tab 4：场景回放与对比 ============ -->
+    <section id="tab-replay" class="tab-panel">
+        <div class="viz-root">
+            <div class="filter-row">
+                <button id="rep-refresh" onclick="loadRuns()">刷新记录</button>
+                <button id="rep-compare-btn" onclick="compareRuns()" disabled>对比所选（A/B）</button>
+                <select id="rep-export-fmt" aria-label="导出格式" title="每行「导出」按钮的下载格式">
+                    <option value="md">导出格式：Markdown (.md)</option>
+                    <option value="json">导出格式：JSON (.json)</option>
+                </select>
+            </div>
+            <p id="rep-note" class="chart-note">加载中…</p>
+            <div class="table-wrap" id="rep-table-wrap">
+                <table id="rep-table">
+                    <thead>
+                        <tr>
+                            <th>对比 A</th>
+                            <th>对比 B</th>
+                            <th>创建时间</th>
+                            <th>分析时刻</th>
+                            <th>车辆编号</th>
+                            <th>场景</th>
+                            <th>run_id</th>
+                            <th>证据</th>
+                            <th>预测</th>
+                            <th>解释</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rep-tbody"></tbody>
+                </table>
+            </div>
+            <div id="compare-panel"></div>
+        </div>
+    </section>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+            onerror="var s=document.createElement('script');s.src='https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js';document.head.appendChild(s);"></script>
+    <script>
+        // ================= 通用工具 =================
+        const cssVar = (name) =>
+            getComputedStyle(document.documentElement.querySelector(".viz-root")).getPropertyValue(name).trim();
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+            }[c]));
+        }
+        const shortTs = (ts) => (ts || "").slice(5, 16);
+        const shortRun = (id) => (id || "").slice(0, 8);
+
+        function statusBadge(status) {
+            const label = { ok: "ok", unavailable: "不可用", error: "失败" }[status] || status;
+            return '<span class="ev-status ' + esc(status) + '">' + esc(label) + "</span>";
+        }
+        function predBadge(pred) {
+            const p = (pred || "UNKNOWN").toUpperCase();
+            const label = { WATCH: "WATCH 高关注", NORMAL: "NORMAL 正常", UNKNOWN: "UNKNOWN 无法评估" }[p] || p;
+            return '<span class="pred-badge ' + esc(p) + '">' + esc(label) + "</span>";
+        }
+
+        // ================= Tab 切换 =================
+        function switchTab(name) {
+            document.querySelectorAll(".tab-btn").forEach((b) =>
+                b.classList.toggle("active", b.dataset.tab === name));
+            document.querySelectorAll(".tab-panel").forEach((p) =>
+                p.classList.toggle("active", p.id === "tab-" + name));
+            if (name === "evolution") {
+                initEvoCharts();
+                renderEvolution();
+                if (evoChartsReady) {
+                    evoTempChart.resize();
+                    evoHumidityChart.resize();
+                }
+            }
+            if (name === "replay" && runsDirty) {
+                loadRuns();
+            }
+        }
+
+        // URL 直达某个 Tab（?tab=evidence 或 #evidence），便于分享与截图
+        function switchTabFromUrl() {
+            const fromQuery = new URLSearchParams(location.search).get("tab");
+            const fromHash = (location.hash || "").replace("#", "").replace("tab-", "");
+            const name = fromQuery || fromHash;
+            if (["overview", "evolution", "evidence", "replay"].includes(name)) switchTab(name);
+        }
+        window.addEventListener("hashchange", switchTabFromUrl);
+
+        // ================= B01 数据源切换：ONENET 实时 / SIMULATED 兜底 =================
+        // b01Source: "sim"（SIMULATED 兜底显示）/ "onenet"（ONENET 实时显示）
+        // b01ScenarioOverride: 离线模式下场景分析回写了顶部卡片，心跳轮询不覆盖，直到切换/在线
+        let b01Source = "sim";
+        let b01ScenarioOverride = false;
+        const simState = {
+            name: "{{ name }}",
+            temperature: {{ temperature }},
+            humidity: {{ humidity }},
+            voltage: {{ voltage }},
+            source_type: "{{ source_type }}",
+        };
+
+        function renderB01(name, temperature, humidity, voltage, sourceType, titleText, paraText) {
+            document.getElementById("ov-state-name").textContent = name;
+            document.getElementById("ov-temperature").textContent = temperature + " °C";
+            document.getElementById("ov-humidity").textContent = humidity + " %";
+            document.getElementById("ov-voltage").textContent = voltage + " V";
+            document.getElementById("ov-source-type").textContent = sourceType;
+            if (titleText) document.getElementById("b01-title").textContent = titleText;
+            if (paraText) document.getElementById("state-name").textContent = paraText;
+        }
+
+        function renderB01Sim() {
+            renderB01(
+                simState.name, simState.temperature, simState.humidity, simState.voltage, simState.source_type,
+                "电池舱模拟状态（B01）",
+                "当前模拟状态：" + simState.name + "（电池温度 " + simState.temperature + " °C / 电池包内湿度 " +
+                    simState.humidity + " % / 电池电压 " + simState.voltage + " V）"
+            );
+        }
+
+        function renderB01Onenet(ls) {
+            renderB01(
+                "ONENET 实时", ls.temperature, ls.humidity, ls.voltage, ls.source_type || "ONENET",
+                "电池舱实时状态（B01 · ONENET）",
+                "当前环境状态：ONENET 实时（电池温度 " + ls.temperature + " °C / 电池包内湿度 " +
+                    ls.humidity + " % / 电池电压 " + ls.voltage + " V）"
+            );
+        }
+
+        // ================= 硬件边缘节点心跳 =================
+        // 每 2 秒轮询 /api/hardware_heartbeat：online: true（最近 5 秒内有新样本）→ 绿灯在线，
+        // B01 卡片同步切换为 ONENET 实时数据；online: false（数据过期）或接口不可达 → 红灯离线，
+        // B01 卡片回落为 SIMULATED 兜底数据；首次响应前保持灰色"检测中"
+        async function pollEdgeHeartbeat() {
+            const dot = document.getElementById("edge-dot");
+            const text = document.getElementById("edge-text");
+            const humEl = document.getElementById("edge-humidity");
+            const box = document.getElementById("edge-status");
+            try {
+                const res = await fetch("/api/hardware_heartbeat");
+                const data = await res.json();
+                const ls = data.latest_sample;
+                if (res.ok && data.online === true) {
+                    dot.style.background = "#2ecc71";
+                    text.textContent = "在线";
+                    box.title = (data.node_id || "STM32-EDGE-01") +
+                        (ls ? " ｜ 最近数据：" + ls.timestamp : "");
+                    humEl.textContent = (ls && ls.humidity != null)
+                        ? "当前湿度 " + ls.humidity + " %" : "";
+                    // B01 卡片：在线 → ONENET 实时数据（每轮刷新最新值）
+                    if (ls) {
+                        renderB01Onenet(ls);
+                        b01Source = "onenet";
+                        b01ScenarioOverride = false;
+                    }
+                    return;
+                }
+                // online: false（最近 5 秒无新数据）或接口异常：红灯
+                dot.style.background = "#e74c3c";
+                text.textContent = "离线";
+                box.title = "数据过期：" + (ls ? "最近样本 " + ls.timestamp : "无样本");
+                humEl.textContent = "";
+                // B01 卡片：离线 → SIMULATED 兜底（场景分析回写期间保留场景显示）
+                if (b01Source !== "sim" && !b01ScenarioOverride) {
+                    renderB01Sim();
+                    b01Source = "sim";
+                }
+            } catch {
+                dot.style.background = "#e74c3c";
+                text.textContent = "离线";
+                box.title = "心跳接口不可达";
+                humEl.textContent = "";
+                if (b01Source !== "sim" && !b01ScenarioOverride) {
+                    renderB01Sim();
+                    b01Source = "sim";
+                }
+            }
+        }
+        pollEdgeHeartbeat();
+        setInterval(pollEdgeHeartbeat, 2000);
+
+        // ================= B01：模拟状态切换（仅离线兜底模式生效；在线时 ONENET 实时数据优先） =================
+        async function toggleState() {
+            const res = await fetch("/toggle", { method: "POST" });
+            const data = await res.json();
+            Object.assign(simState, {
+                name: data.name,
+                temperature: data.temperature,
+                humidity: data.humidity,
+                voltage: data.voltage,
+                source_type: data.source_type,
+            });
+            document.getElementById("toggle-btn").textContent = "切换到 " + data.next_name;
+            b01ScenarioOverride = false;
+            if (b01Source === "sim") {
+                renderB01Sim();
+            }
+        }
+
+        // ================= AI 助手主控台（/agent/chat） =================
+        async function sendAgent() {
+            const input = document.getElementById("agent-input");
+            const btn = document.getElementById("agent-send-btn");
+            const question = input.value.trim();
+            if (!question) return;
+            btn.disabled = true;
+            btn.textContent = "思考中…";
+            const chat = document.getElementById("agent-chat");
+
+            const qLine = document.createElement("div");
+            qLine.className = "agent-q";
+            qLine.textContent = "你：" + question;
+            chat.appendChild(qLine);
+
+            try {
+                const res = await fetch("/agent/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question }),
+                });
+                let data;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
+                if (!res.ok || !data || !data.answer) {
+                    throw new Error(data && data.error ? data.error : "API调用失败：网络或密钥错误");
+                }
+                const card = document.createElement("div");
+                card.className = "answer";
+                const meta = document.createElement("div");
+                meta.className = "answer-meta";
+                meta.textContent = "AI 助手 · 工具调用 " + (data.tool_calls || 0) + " 次";
+                const text = document.createElement("div");
+                text.className = "answer-text";
+                text.textContent = data.answer;
+                card.append(meta, text);
+                chat.appendChild(card);
+                input.value = "";
+            } catch (err) {
+                const card = document.createElement("div");
+                card.className = "answer error";
+                card.textContent = err.message;
+                chat.appendChild(card);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "发送";
+                chat.scrollTop = chat.scrollHeight;
+            }
+        }
+
+        // ================= 全局状态：最近一次分析 =================
+        let latestAnalysis = null;
+        let runsCache = [];
+        let runsDirty = true;
+        const picked = { A: null, B: null };
+
+        // ================= Tab 1：状态总览 =================
+        function attentionInfo(pred) {
+            if (pred === "WATCH") return { cls: "watch", text: "关注等级：高关注（WATCH）" };
+            if (pred === "NORMAL") return { cls: "normal", text: "关注等级：正常（NORMAL）" };
+            return { cls: "unknown", text: "关注等级：无法评估（UNKNOWN）" };
+        }
+
+        function renderOverview(run) {
+            const box = document.getElementById("overview-result");
+            box.textContent = "";
+            if (!run) {
+                const p = document.createElement("p");
+                p.className = "chart-note";
+                p.textContent = "尚无分析记录。点击「运行统一分析」，或从「场景回放与对比」查看历史记录。";
+                box.appendChild(p);
+                return;
+            }
+            const j = run.judgment || {};
+            const env = j.current_environment || {};
+            const trend = j.recent_trend || {};
+            const pred = j.next_window_prediction || {};
+            const comp = j.evidence_completeness || {};
+            const att = attentionInfo(pred.predicted_attention);
+
+            const sc = (run.judgment && run.judgment.scenario) || run.scenario;
+            const scTxt = sc ? " · 场景 " + esc(sc) + "（" +
+                esc((run.judgment && run.judgment.scenario_name) || "") + "）" : "";
+            let html = '<div class="ov-head">';
+            html += '<span class="ov-badge ' + att.cls + '">' + esc(att.text) + "</span>";
+            html += '<span class="run-meta">run_id ' + esc(run.run_id) + " · 分析时刻 " +
+                esc(run.analysis_time) + " · 车辆 " + esc(run.location) + scTxt + "</span>";
+            html += "</div>";
+
+            html += '<div class="judgment-grid">';
+            html += '<div class="judge-card"><h4>当前环境判断 <span style="font-size:12px;font-weight:normal;color:#888;">离线下采样数据</span></h4><p>' +
+                esc(env.assessment || "（无）") + "</p></div>";
+            html += '<div class="judge-card"><h4>近期趋势</h4><p>' +
+                esc(trend.assessment || "（无）") + "</p></div>";
+            let predHtml = predBadge(pred.predicted_attention);
+            if (pred.model_version) predHtml += '<div class="chart-note">模型 ' + esc(pred.model_version) + "</div>";
+            if (pred.window_end) predHtml += '<div class="chart-note">预测窗口截至 ' + esc(shortTs(pred.window_end)) + "</div>";
+            if (pred.basis) predHtml += '<div class="chart-note warn">' + esc(pred.basis) + "</div>";
+            if (pred.error) predHtml += '<div class="chart-note error">' + esc(pred.error) + "</div>";
+            html += '<div class="judge-card"><h4>下一窗口预测</h4>' + predHtml + "</div>";
+            const ratioPct = comp.total ? Math.round((comp.ratio || 0) * 100) : 0;
+            html += '<div class="judge-card"><h4>证据完整度</h4><p>' +
+                esc(comp.ok || 0) + " ok / " + esc(comp.unavailable || 0) + " 不可用 / " +
+                esc(comp.error || 0) + " 失败（共 " + esc(comp.total || 0) + "）</p>" +
+                '<div class="ratio-track"><div class="ratio-fill" style="width:' + ratioPct +
+                '%"></div></div><p class="chart-note">完整度 ' + ratioPct + "%</p></div>";
+            html += "</div>";
+
+            html += '<div class="judge-card" style="margin-top: 12px;"><h4>AI 解释（LLM）</h4><p>' +
+                (run.explanation ? esc(run.explanation) : '<span class="chart-note error">（本次解释缺失：LLM 调用失败）</span>') +
+                "</p></div>";
+
+            box.innerHTML = html;
+        }
+
+        async function runAnalysis() {
+            const btn = document.getElementById("an-btn");
+            const box = document.getElementById("overview-result");
+            btn.disabled = true;
+            btn.textContent = "分析中…";
+            const body = {
+                location: document.getElementById("an-location").value.trim(),
+                scenario: document.getElementById("an-scenario").value,
+            };
+            const t = document.getElementById("an-time").value;
+            if (t) body.analysis_time = t;
+            try {
+                const res = await fetch("/analyze", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                });
+                let data;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
+                if (!res.ok || !data || !data.run_id) {
+                    throw new Error(data && data.error ? data.error : "分析失败");
+                }
+                latestAnalysis = data;
+                runsDirty = true;
+                syncB01Header(data);
+                renderOverview(data);
+                renderEvidence();
+                if (document.getElementById("tab-evolution").classList.contains("active")) {
+                    renderEvolution();
+                }
+            } catch (err) {
+                const card = document.createElement("div");
+                card.className = "answer error";
+                card.textContent = err.message;
+                box.textContent = "";
+                box.appendChild(card);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "运行统一分析";
+            }
+        }
+
+        // 分析完成后把顶部「电池舱模拟状态 (B01)」同步为该次分析的当前环境
+        //（场景注入时显示场景数值，如 S2 的 69°C / 2.8V，避免顶部与下方分析结果不一致）
+        // 仅在 SIMULATED 兜底模式下回写；ONENET 在线时顶部保持实时数据，场景结果以下方分析卡为准
+        function syncB01Header(run) {
+            if (b01Source !== "sim") return;
+            const env = ((run.judgment || {}).current_environment) || {};
+            if (env.temperature == null && env.state == null) return;
+            const stateName = env.state || "未知";
+            renderB01(
+                stateName, env.temperature, env.humidity, env.voltage, "SIMULATED",
+                "电池舱模拟状态（B01）",
+                "当前模拟状态：" + stateName + "（电池温度 " + env.temperature + " °C / 电池包内湿度 " +
+                    env.humidity + " % / 电池电压 " + env.voltage + " V）"
+            );
+            b01ScenarioOverride = true;
+        }
+
+        // ================= Tab 2：状态演化 =================
+        const CHANGE_NODE_DELTA = 2.0; // 相邻 30 分钟 |ΔT| >= 2.0°C 记为关键变化节点
+        const WEATHER_CHANGE_DELTA = 3.0; // B03 预报走向 |ΔT| >= 3.0°C 视为天气条件明显变化
+
+        const markLinePlugin = {
+            id: "markLines",
+            afterDatasetsDraw(chart, _args, opts) {
+                const xScale = chart.scales.x;
+                const { top, bottom, left, right } = chart.chartArea;
+                let labelY = top + 12;
+                for (const line of opts.lines || []) {
+                    if (line.index == null) continue;
+                    let x = xScale.getPixelForValue(line.index);
+                    x = Math.max(left, Math.min(right, x));
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.strokeStyle = line.color;
+                    if (line.dash) ctx.setLineDash(line.dash);
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, top);
+                    ctx.lineTo(x, bottom);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = line.color;
+                    ctx.font = "12px system-ui";
+                    ctx.textAlign = x < left + 80 ? "left" : (x > right - 80 ? "right" : "center");
+                    ctx.fillText(line.label, x, labelY);
+                    ctx.restore();
+                    labelY += 14;
+                }
+            },
+        };
+
+        let evoChartsReady = false;
+        let evoTempChart = null;
+        let evoHumidityChart = null;
+
+        function initEvoCharts() {
+            if (evoChartsReady) return;
+            if (typeof Chart === "undefined") {
+                document.getElementById("evo-note").textContent =
+                    "Chart.js 加载失败（网络不可达？），无法绘制图表";
+                document.getElementById("evo-note").className = "chart-note error";
+                return;
+            }
+            const tickCb = function (value) {
+                const label = this.getLabelForValue(value);
+                return typeof label === "string" ? label.slice(5, 16) : label;
+            };
+            const baseScales = {
+                x: {
+                    ticks: { maxTicksLimit: 8, maxRotation: 0, color: cssVar("--muted"), callback: tickCb },
+                    grid: { display: false },
+                },
+                y: {
+                    ticks: { color: cssVar("--muted") },
+                    grid: { color: cssVar("--gridline") },
+                    border: { color: cssVar("--baseline") },
+                },
+            };
+            evoTempChart = new Chart(document.getElementById("chart-evo-temp"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: "电池温度",
+                            data: [],
+                            borderColor: cssVar("--series-temp"),
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0,
+                        },
+                        {
+                            label: "关键变化节点",
+                            data: [],
+                            showLine: false,
+                            pointBackgroundColor: cssVar("--err"),
+                            pointBorderColor: cssVar("--surface-1"),
+                            pointBorderWidth: 2,
+                            pointRadius: 5,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: cssVar("--text-secondary"), usePointStyle: true, boxWidth: 8 },
+                        },
+                        tooltip: {
+                            displayColors: false,
+                            callbacks: {
+                                label: (ctx) =>
+                                    ctx.datasetIndex === 1
+                                        ? "关键变化 " + ctx.parsed.y.toLocaleString() + " °C"
+                                        : ctx.parsed.y.toLocaleString() + " °C",
+                            },
+                        },
+                        markLines: { lines: [] },
+                    },
+                    scales: baseScales,
+                },
+                plugins: [markLinePlugin],
+            });
+            evoHumidityChart = new Chart(document.getElementById("chart-evo-humidity"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: "电池包内湿度",
+                        data: [],
+                        borderColor: cssVar("--series-humidity"),
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { mode: "index", intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            displayColors: false,
+                            callbacks: { label: (ctx) => ctx.parsed.y.toLocaleString() + " %" },
+                        },
+                    },
+                    scales: baseScales,
+                },
+            });
+            evoChartsReady = true;
+        }
+
+        function renderEvoCharts(samples, weatherTime, analysisTime, events) {
+            const labels = samples.map((s) => s.timestamp);
+            // 关键变化节点：相邻 30 分钟 |ΔT| >= 2.0°C 的点
+            const marked = [];
+            const nodeData = samples.map(() => null);
+            for (let i = 1; i < samples.length; i++) {
+                if (Math.abs(samples[i].temperature - samples[i - 1].temperature) >= CHANGE_NODE_DELTA) {
+                    if (!marked.includes(i - 1)) marked.push(i - 1);
+                    marked.push(i);
+                }
+            }
+            for (const idx of marked) nodeData[idx] = samples[idx].temperature;
+
+            evoTempChart.data.labels = labels;
+            evoTempChart.data.datasets[0].data = samples.map((s) => s.temperature);
+            evoTempChart.data.datasets[1].data = nodeData;
+
+            // 竖直标注线：分析时刻（实线）+ 外部天气介入（虚线）+ 事件标注，均夹到窗口范围
+            const lineIndex = (t) => {
+                if (t == null) return null;
+                if (t <= labels[0]) return 0;
+                if (t >= labels[labels.length - 1]) return labels.length - 1;
+                for (let i = 0; i < labels.length; i++) {
+                    if (labels[i] >= t) return i;
+                }
+                return null;
+            };
+            const lines = [];
+            if (analysisTime) {
+                lines.push({ index: lineIndex(analysisTime), label: "分析时刻",
+                             color: cssVar("--text-primary"), dash: [] });
+            }
+            // 通用天气介入线；已存在「外部天气条件介入」事件标注时省略，避免两条近义线重叠
+            if (weatherTime && !(events || []).some((ev) => ev.label === "外部天气条件介入")) {
+                lines.push({ index: lineIndex(weatherTime), label: "外部天气介入",
+                             color: cssVar("--warn"), dash: [6, 4] });
+            }
+            for (const ev of events || []) {
+                lines.push({ index: lineIndex(ev.time), label: ev.label, color: ev.color, dash: ev.dash });
+            }
+            evoTempChart.options.plugins.markLines.lines = lines;
+            evoTempChart.update();
+
+            evoHumidityChart.data.labels = labels;
+            evoHumidityChart.data.datasets[0].data = samples.map((s) => s.humidity);
+            evoHumidityChart.update();
+        }
+
+        function renderEvoTable(samples) {
+            const tbody = document.getElementById("evo-tbody");
+            tbody.textContent = "";
+            for (const s of samples) {
+                const tr = document.createElement("tr");
+                for (const v of [s.timestamp, s.temperature, s.humidity, s.voltage, s.source_type]) {
+                    const td = document.createElement("td");
+                    td.textContent = v;
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+        }
+
+        function findPredictionTransition(runs) {
+            // 按分析时刻升序，找第一个「前次 NORMAL → 本次 WATCH」的转折 run
+            const sorted = runs.slice().sort((a, b) => (a.analysis_time < b.analysis_time ? -1 : 1));
+            for (let i = 1; i < sorted.length; i++) {
+                const prev = ((sorted[i - 1].judgment || {}).next_window_prediction || {}).predicted_attention;
+                const cur = ((sorted[i].judgment || {}).next_window_prediction || {}).predicted_attention;
+                if (prev === "NORMAL" && cur === "WATCH") return sorted[i];
+            }
+            return null;
+        }
+
+        function weatherChangeAfter(transRun, transTime) {
+            // 转折 run 的 B03 预报：转折时刻之后的温度走向 |ΔT| >= 阈值 → 天气条件介入
+            const we = (transRun.evidence || []).find((e) => e.source_type === "B03_WEATHER");
+            if (!we || we.status !== "ok" || !we.result) return null;
+            const times = we.result.times || [];
+            const temps = we.result.temperature_2m || [];
+            const after = [];
+            let firstAfter = null;
+            for (let i = 0; i < temps.length; i++) {
+                if (times[i] && times[i] > transTime) {
+                    after.push(temps[i]);
+                    if (firstAfter === null) firstAfter = times[i];
+                }
+            }
+            if (after.length < 2) return null;
+            const delta = after[after.length - 1] - after[0];
+            return Math.abs(delta) >= WEATHER_CHANGE_DELTA ? { delta, firstAfter } : null;
+        }
+
+        async function renderEvolution() {
+            initEvoCharts();
+            if (!evoChartsReady) return;
+            const note = document.getElementById("evo-note");
+            let samples = null;
+            let weatherTime = null;
+            let analysisTime = null;
+            let runId = null;
+            let mlTransTime = null;
+            let weatherAfterTime = null;
+
+            if (latestAnalysis) {
+                analysisTime = latestAnalysis.analysis_time;
+                const hist = (latestAnalysis.evidence || []).find((e) => e.source_type === "B02_HISTORY");
+                if (hist && hist.status === "ok" && hist.result && hist.result.samples &&
+                    hist.result.samples.length >= 2) {
+                    samples = hist.result.samples;
+                    runId = latestAnalysis.run_id;
+                }
+                const we = (latestAnalysis.evidence || []).find((e) => e.source_type === "B03_WEATHER");
+                if (we && we.status === "ok") weatherTime = we.time;
+            }
+            // ML 预测变更检测：跨 run 找 NORMAL → WATCH 转折；转折后 B03 天气明显变化则加介入标注
+            if (latestAnalysis) {
+                try {
+                    const res = await fetch("/analyze/runs?limit=30");
+                    const data = await res.json();
+                    if (res.ok && data.runs) {
+                        const trans = findPredictionTransition(data.runs);
+                        if (trans) {
+                            mlTransTime = trans.analysis_time;
+                            const wc = weatherChangeAfter(trans, mlTransTime);
+                            if (wc) weatherAfterTime = wc.firstAfter;
+                        }
+                    }
+                } catch {
+                    // 拉取失败则跳过事件标注，不影响图表主体
+                }
+            }
+            // 无分析记录时回退到原始历史数据（最近 24 小时）
+            if (!samples) {
+                try {
+                    const res = await fetch("/history");
+                    const data = await res.json();
+                    if (res.ok && data.samples && data.samples.length >= 2) {
+                        samples = data.samples;
+                    }
+                } catch {
+                    // 保持 samples=null，走失败提示
+                }
+            }
+
+            if (!samples) {
+                note.textContent = "历史数据加载失败";
+                note.className = "chart-note error";
+                return;
+            }
+
+            const events = [];
+            if (mlTransTime) {
+                events.push({ time: mlTransTime, label: "模型预测变更为 WATCH",
+                              color: cssVar("--err"), dash: [] });
+                if (weatherAfterTime) {
+                    events.push({ time: weatherAfterTime, label: "外部天气条件介入",
+                                  color: cssVar("--warn"), dash: [6, 4] });
+                }
+            }
+            renderEvoCharts(samples, weatherTime, analysisTime, events);
+            renderEvoTable(samples);
+            const nodes = (() => {
+                let n = 0;
+                for (let i = 1; i < samples.length; i++) {
+                    if (Math.abs(samples[i].temperature - samples[i - 1].temperature) >= CHANGE_NODE_DELTA) n++;
+                }
+                return n;
+            })();
+            note.className = "chart-note";
+            note.textContent = (runId
+                ? "窗口来自 run_id " + shortRun(runId) + " · "
+                : "暂无分析记录，展示最近 24 小时原始数据 · ") +
+                "共 " + samples.length + " 个点（" + shortTs(samples[0].timestamp) + " ~ " +
+                shortTs(samples[samples.length - 1].timestamp) + "） · 关键变化节点 " + nodes +
+                " 个（相邻 30 分钟 |ΔT| ≥ " + CHANGE_NODE_DELTA + "°C）" +
+                (analysisTime ? " · 分析时刻线 @ " + shortTs(analysisTime) : "") +
+                (mlTransTime ? " · 模型预测变更线（NORMAL→WATCH）@ " + shortTs(mlTransTime) : "") +
+                (weatherAfterTime ? " · 外部天气条件介入线 @ " + shortTs(weatherAfterTime) : "") +
+                (weatherTime && !weatherAfterTime ? " · 天气介入线 @ " + shortTs(weatherTime)
+                 : (!weatherTime && !weatherAfterTime ? " · 天气证据不可用，无介入线" : ""));
+        }
+
+        // ================= Tab 3：证据空间 =================
+        function evCard(e) {
+            let body = "";
+            const r = e.result || {};
+            switch (e.source_type) {
+                case "B01_STATE":
+                    body = "状态 " + esc(r.name || "?") + "：电池温度 " + esc(r.temperature) + " °C，电池包内湿度 " +
+                        esc(r.humidity) + " %，电池电压 " + esc(r.voltage) + " V";
+                    break;
+                case "B02_HISTORY":
+                    if (r.count === 0) {
+                        body = "该时间窗口内没有历史数据";
+                    } else {
+                        const temps = r.samples.map((s) => s.temperature);
+                        body = "使用 " + esc(r.count) + " 条历史样点（" + esc(shortTs(r.start)) + " ~ " +
+                            esc(shortTs(r.end)) + "），电池温度区间 " + esc(Math.min(...temps)) + " ~ " +
+                            esc(Math.max(...temps)) + " °C，首末 Δ" +
+                            esc((temps[temps.length - 1] - temps[0]).toFixed(2)) + " °C";
+                    }
+                    break;
+                case "B03_WEATHER":
+                    body = "外部环境工况（模拟云端下发的环境预警） · provider: " + esc(r.provider || "?") +
+                        " · 对象 " + esc(r.location_name || "?") +
+                        " · 未来 " + esc((r.times || []).length) + " 个逐小时预报点";
+                    if (r.times && r.times.length) {
+                        const temps = r.temperature_2m;
+                        const preps = r.precipitation_probability;
+                        body += "（" + esc(shortTs(r.times[0])) + " ~ " + esc(shortTs(r.times[r.times.length - 1])) + "）";
+                        if (temps && temps.length) body += "，温度 " + esc(Math.min(...temps)) + " ~ " + esc(Math.max(...temps)) + " °C";
+                        if (preps && preps.length) body += "，降水概率最高 " + esc(Math.max(...preps)) + "%";
+                        let rows = "";
+                        for (let i = 0; i < r.times.length; i++) {
+                            rows += "<tr><td>" + esc(r.times[i]) + "</td><td>" +
+                                esc(r.temperature_2m[i]) + "</td><td>" + esc(r.relative_humidity_2m[i]) +
+                                "</td><td>" + esc(r.precipitation_probability[i]) + "</td></tr>";
+                        }
+                        body += '<details><summary>查看完整逐小时预报</summary><table><tr><th>时间</th><th>温度 (°C)</th>' +
+                            "<th>湿度 (%)</th><th>降水概率 (%)</th></tr>" + rows + "</table></details>";
+                    }
+                    break;
+                case "B04_KNOWLEDGE":
+                    body = "检索词「" + esc("锂电池热失控前兆与 BMS 管理规范") + "」，命中 " + esc(r.count || 0) + " 段：";
+                    for (const chunk of r.results || []) {
+                        body += '<details><summary>' + esc(chunk.source) + " 第" + esc(chunk.paragraph) +
+                            "段 · score " + esc(chunk.score) + "</summary><p>" + esc(chunk.text) + "</p></details>";
+                    }
+                    break;
+                case "B06_ML_PREDICT":
+                    body = predBadge(r.predicted_attention) +
+                        (r.model_version ? " · 模型 " + esc(r.model_version) : "") +
+                        (r.window_end ? " · 预测窗口截至 " + esc(r.window_end) : "");
+                    break;
+                case "B06_VISION":
+                    body = "YOLO 描述：" + esc(r.description || "（无）");
+                    for (const o of r.objects || []) {
+                        body += '<span class="chip">' + esc(o.label) + " ×" + esc(o.count) +
+                            "（置信度 " + esc(o.confidence) + "）</span>";
+                    }
+                    break;
+                default:
+                    body = esc(JSON.stringify(r, null, 2));
+            }
+            if (e.status !== "ok") {
+                body += '<div class="ev-error" style="margin-top: 6px;">错误说明：' + esc(e.error || "（无）") + "</div>";
+            }
+            // 每条证据都可展开查看原始记录（完整 JSON，含 result 原始结果）
+            body += '<details class="ev-raw"><summary>查看原始结果（完整 JSON）</summary><pre>' +
+                esc(JSON.stringify(e, null, 2)) + "</pre></details>";
+            return '<div class="ev-card"><div class="ev-head"><span class="ev-type">' +
+                esc(e.source_type) + '</span>' + statusBadge(e.status) +
+                '<span class="chip">来源 ' + esc(e.source) + "</span>" +
+                '<span class="ev-time">证据时间 ' + esc(e.time) + "</span></div>" +
+                '<div class="ev-body">' + body + "</div></div>";
+        }
+
+        async function renderEvidence() {
+            const note = document.getElementById("evi-note");
+            const list = document.getElementById("evidence-list");
+            if (!latestAnalysis) {
+                try {
+                    const res = await fetch("/analyze/runs?limit=1");
+                    const data = await res.json();
+                    if (res.ok && data.runs && data.runs.length) {
+                        latestAnalysis = data.runs[0];
+                        renderOverview(latestAnalysis);
+                    }
+                } catch {
+                    // 后端不可达：保持为空
+                }
+            }
+            list.textContent = "";
+            if (!latestAnalysis) {
+                note.className = "chart-note";
+                note.textContent = "暂无分析记录。请先在「状态总览」运行一次统一分析。";
+                return;
+            }
+            note.className = "chart-note";
+            note.textContent = "以下证据来自 run_id " + latestAnalysis.run_id + "（分析时刻 " +
+                latestAnalysis.analysis_time + "，车辆 " + latestAnalysis.location + "），共 " +
+                (latestAnalysis.evidence || []).length + " 条。";
+            for (const e of latestAnalysis.evidence || []) {
+                const div = document.createElement("div");
+                div.innerHTML = evCard(e);
+                list.appendChild(div);
+            }
+        }
+
+        // ================= Tab 4：场景回放与对比 =================
+        async function loadRuns() {
+            const btn = document.getElementById("rep-refresh");
+            const note = document.getElementById("rep-note");
+            btn.disabled = true;
+            btn.textContent = "加载中…";
+            picked.A = null;
+            picked.B = null;
+            try {
+                const res = await fetch("/analyze/runs?limit=30");
+                let data;
+                try {
+                    data = await res.json();
+                } catch {
+                    data = null;
+                }
+                if (!res.ok || !data) throw new Error("记录加载失败");
+                runsCache = data.runs || [];
+                runsDirty = false;
+                renderRunsTable();
+                note.className = "chart-note";
+                note.textContent = runsCache.length
+                    ? "共 " + runsCache.length + " 条分析记录。勾选两行（A、B 各一）后点击「对比所选」。"
+                    : "暂无分析记录。请先在「状态总览」运行一次统一分析。";
+                // 深链 ?compare=<runA前缀>,<runB前缀>：自动勾选并对比（便于截图与固定演示）
+                const cmpParam = new URLSearchParams(location.search).get("compare");
+                if (cmpParam) {
+                    const parts = cmpParam.split(",");
+                    const fa = runsCache.find((r) => r.run_id.startsWith((parts[0] || "").trim()));
+                    const fb = runsCache.find((r) => r.run_id.startsWith((parts[1] || "").trim()));
+                    if (fa && fb) {
+                        picked.A = fa.run_id;
+                        picked.B = fb.run_id;
+                        document.querySelectorAll("#rep-tbody input").forEach((c) => {
+                            c.checked = (c.dataset.run === fa.run_id && c.dataset.role === "A") ||
+                                        (c.dataset.run === fb.run_id && c.dataset.role === "B");
+                        });
+                        compareRuns();
+                    }
+                }
+            } catch (err) {
+                note.textContent = "记录加载失败：" + err.message;
+                note.className = "chart-note error";
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "刷新记录";
+            }
+        }
+
+        async function exportRun(runId) {
+            // 后端生成报告（md/json），前端仅触发下载；证据链在服务端固化
+            const fmt = document.getElementById("rep-export-fmt").value;
+            const note = document.getElementById("rep-note");
+            try {
+                const res = await fetch("/analyze/runs/" + encodeURIComponent(runId) + "/export?fmt=" + fmt);
+                if (!res.ok) {
+                    note.textContent = "导出失败：HTTP " + res.status;
+                    note.className = "chart-note error";
+                    return;
+                }
+                const blob = await res.blob();
+                const cd = res.headers.get("Content-Disposition") || "";
+                const m = cd.match(/filename="([^"]+)"/);
+                const fname = m ? m[1] : "run_" + shortRun(runId) + "_report." + fmt;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = fname;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                note.textContent = "已导出 " + fname + "（" + shortRun(runId) + "）。";
+                note.className = "chart-note";
+            } catch (err) {
+                note.textContent = "导出失败：" + err.message;
+                note.className = "chart-note error";
+            }
+        }
+
+        function runRowHtml(run, idx) {
+            const j = run.judgment || {};
+            const comp = j.evidence_completeness || {};
+            const pred = (j.next_window_prediction || {}).predicted_attention;
+            const radio = (role) => '<input type="checkbox" data-role="' + role + '" data-run="' +
+                esc(run.run_id) + '" onchange="onPick(\'' + role + "', '" + esc(run.run_id) + "', this.checked)\">";
+            return "<tr>" +
+                "<td>" + radio("A") + "</td>" +
+                "<td>" + radio("B") + "</td>" +
+                "<td>" + esc(run.created_at) + "</td>" +
+                "<td>" + esc(run.analysis_time) + "</td>" +
+                "<td>" + esc(run.location) + "</td>" +
+                "<td>" + esc((run.judgment && run.judgment.scenario) || "—") + "</td>" +
+                '<td title="' + esc(run.run_id) + '">' + esc(shortRun(run.run_id)) + "</td>" +
+                "<td>" + esc(comp.ok || 0) + "/" + esc(comp.total || 0) +
+                "（" + Math.round((comp.ratio || 0) * 100) + "%）</td>" +
+                "<td>" + predBadge(pred) + "</td>" +
+                "<td>" + (run.explanation ? "✓" : "—") + "</td>" +
+                '<td><button onclick="toggleRunDetail(' + idx + ', this)">详情</button> ' +
+                '<button onclick="exportRun(\'' + esc(run.run_id) + '\')" title="导出结构化判断 + 证据链 + LLM 解释">导出</button></td>' +
+                "</tr>";
+        }
+
+        function runDetailHtml(run) {
+            const j = run.judgment || {};
+            const env = j.current_environment || {};
+            const trend = j.recent_trend || {};
+            const pred = j.next_window_prediction || {};
+            const comp = j.evidence_completeness || {};
+            let evs = "";
+            for (const e of run.evidence || []) {
+                evs += '<span class="chip">' + esc(e.source_type) + "</span>" + statusBadge(e.status);
+            }
+            return '<tr class="row-detail"><td colspan="11">' +
+                "<p><strong>场景：</strong>" + esc((j.scenario || "—") + (j.scenario_name ? "（" + j.scenario_name + "）" : "")) + "</p>" +
+                "<p><strong>当前环境：</strong>" + esc(env.assessment || "（无）") + "</p>" +
+                "<p><strong>近期趋势：</strong>" + esc(trend.assessment || "（无）") + "</p>" +
+                "<p><strong>下一窗口预测：</strong>" + predBadge(pred.predicted_attention) +
+                (pred.model_version ? " · 模型 " + esc(pred.model_version) : "") +
+                (pred.window_end ? " · 窗口截至 " + esc(pred.window_end) : "") + "</p>" +
+                (pred.basis ? '<p class="chart-note warn">' + esc(pred.basis) + "</p>" : "") +
+                "<p><strong>证据：</strong>" + evs + "</p>" +
+                "<p><strong>AI 解释：</strong></p><p class=\"answer-text\">" +
+                (run.explanation ? esc(run.explanation) : "（缺失）") + "</p>" +
+                "</td></tr>";
+        }
+
+        function renderRunsTable() {
+            const tbody = document.getElementById("rep-tbody");
+            tbody.textContent = "";
+            runsCache.forEach((run, idx) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = runRowHtml(run, idx);
+                tbody.appendChild(tr);
+            });
+            document.getElementById("compare-panel").textContent = "";
+            updateCompareBtn();
+        }
+
+        function toggleRunDetail(idx, btn) {
+            const tr = btn.closest("tr");
+            const existing = tr.nextElementSibling;
+            if (existing && existing.classList.contains("row-detail")) {
+                existing.remove();
+                btn.textContent = "详情";
+            } else {
+                const detail = document.createElement("tr");
+                detail.innerHTML = runDetailHtml(runsCache[idx]);
+                tr.after(detail);
+                btn.textContent = "收起";
+            }
+        }
+
+        function onPick(role, runId, checked) {
+            if (checked) {
+                picked[role] = runId;
+                document.querySelectorAll('#rep-tbody input[data-role="' + role + '"]').forEach((c) => {
+                    if (c.dataset.run !== runId) c.checked = false;
+                });
+            } else if (picked[role] === runId) {
+                picked[role] = null;
+            }
+            updateCompareBtn();
+        }
+
+        function updateCompareBtn() {
+            document.getElementById("rep-compare-btn").disabled = !(picked.A && picked.B);
+        }
+
+        function cmpSection(label) {
+            return '<tr class="cmp-section"><th colspan="3">' + esc(label) + "</th></tr>";
+        }
+
+        function cmpRow(label, aHtml, bHtml, diffCount) {
+            const diff = String(aHtml) !== String(bHtml);
+            if (diff) diffCount.n++;
+            return '<tr class="' + (diff ? "diff" : "") + '"><th>' + esc(label) + "</th><td>" +
+                (aHtml ?? "—") + "</td><td>" + (bHtml ?? "—") + "</td></tr>";
+        }
+
+        function cmpRows(a, b) {
+            const jA = a.judgment || {}, jB = b.judgment || {};
+            const envA = jA.current_environment || {}, envB = jB.current_environment || {};
+            const trA = jA.recent_trend || {}, trB = jB.recent_trend || {};
+            const pA = jA.next_window_prediction || {}, pB = jB.next_window_prediction || {};
+            const cA = jA.evidence_completeness || {}, cB = jB.evidence_completeness || {};
+            const diffCount = { n: 0 };
+
+            // 证据完整度：6/6（100%）格式 + unavailable/error 明细
+            const compStr = (c) => {
+                if (!c.total) return "（无记录）";
+                let s = esc(c.ok) + "/" + esc(c.total) + "（" + Math.round((c.ratio || 0) * 100) + "%）";
+                const parts = [];
+                if (c.unavailable) parts.push("不可用 " + c.unavailable);
+                if (c.error) parts.push("失败 " + c.error);
+                if (parts.length) s += " · " + parts.join(" · ");
+                return s;
+            };
+            const conflicts = (j) => (j.evidence_conflicts || []).length
+                ? j.evidence_conflicts.map((x) => "⚠ " + esc(x)).join("<br>")
+                : "（无）";
+            const scen = (j) => j.scenario
+                ? esc(j.scenario) + "（" + esc(j.scenario_name || "") + "）"
+                : "—";
+            const predCell = (p) => predBadge(p.predicted_attention) +
+                (p.model_version ? " · " + esc(p.model_version) : "");
+
+            // 逐条证据状态（按固定顺序），两列并排对比
+            const SRC_ORDER = ["B01_STATE", "B02_HISTORY", "B03_WEATHER", "B04_KNOWLEDGE",
+                               "B06_ML_PREDICT", "B06_VISION"];
+            const evA = {}, evB = {};
+            for (const e of a.evidence || []) evA[e.source_type] = e;
+            for (const e of b.evidence || []) evB[e.source_type] = e;
+
+            let html = cmpSection("基本信息");
+            html += cmpRow("run_id", esc(shortRun(a.run_id)), esc(shortRun(b.run_id)), diffCount);
+            html += cmpRow("分析时刻", esc(a.analysis_time), esc(b.analysis_time), diffCount);
+            html += cmpRow("车辆编号", esc(a.location), esc(b.location), diffCount);
+            html += cmpRow("场景", scen(jA), scen(jB), diffCount);
+
+            html += cmpSection("结构化判断");
+            html += cmpRow("当前环境判断", esc(envA.assessment || "（无）"),
+                           esc(envB.assessment || "（无）"), diffCount);
+            html += cmpRow("电池温度 (°C)", envA.temperature, envB.temperature, diffCount);
+            html += cmpRow("电池包内湿度 (%)", envA.humidity, envB.humidity, diffCount);
+            html += cmpRow("近期趋势", esc(trA.assessment || "（无）"),
+                           esc(trB.assessment || "（无）"), diffCount);
+            html += cmpRow("下一窗口预测", predCell(pA), predCell(pB), diffCount);
+            html += cmpRow("证据冲突/分歧", conflicts(jA), conflicts(jB), diffCount);
+
+            html += cmpSection("证据完整度");
+            html += cmpRow("ok / 总数", compStr(cA), compStr(cB), diffCount);
+            for (const src of SRC_ORDER) {
+                html += cmpRow(src,
+                    evA[src] ? statusBadge(evA[src].status) : "—",
+                    evB[src] ? statusBadge(evB[src].status) : "—",
+                    diffCount);
+            }
+
+            // AI 解释默认折叠，避免对比表被两段长文淹没
+            html += '<tr class="cmp-exp"><td colspan="3"><details><summary>AI 解释对比（点击展开）</summary>' +
+                "<p><strong>解释 A：</strong>" + (a.explanation ? esc(a.explanation) : "（缺失）") + "</p>" +
+                "<p><strong>解释 B：</strong>" + (b.explanation ? esc(b.explanation) : "（缺失）") + "</p>" +
+                "</details></td></tr>";
+            return { html, diffCount: diffCount.n };
+        }
+
+        function compareRuns() {
+            const box = document.getElementById("compare-panel");
+            const a = runsCache.find((r) => r.run_id === picked.A);
+            const b = runsCache.find((r) => r.run_id === picked.B);
+            if (!a || !b) return;
+            const res = cmpRows(a, b);
+            box.innerHTML = '<p class="chart-note" style="margin-top: 12px;">浅黄色行 = 两次运行存在差异 · 共 ' +
+                res.diffCount + " 项差异</p>" +
+                '<div class="table-wrap"><table class="cmp-table"><thead><tr><th>指标</th><th>对比 A · ' +
+                esc(shortRun(a.run_id)) + "</th><th>对比 B · " + esc(shortRun(b.run_id)) +
+                "</th></tr></thead><tbody>" + res.html + "</tbody></table></div>";
+            box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+
+        // ================= 页面初始化 =================
+        async function loadLatest() {
+            try {
+                const res = await fetch("/analyze/runs?limit=1");
+                const data = await res.json();
+                if (res.ok && data.runs && data.runs.length) {
+                    latestAnalysis = data.runs[0];
+                    renderOverview(latestAnalysis);
+                    renderEvidence();
+                } else {
+                    renderOverview(null);
+                    renderEvidence();
+                }
+            } catch {
+                renderOverview(null);
+                renderEvidence();
+            }
+        }
+
+        loadLatest();
+        switchTabFromUrl();
+    </script>
+</body>
+</html>
