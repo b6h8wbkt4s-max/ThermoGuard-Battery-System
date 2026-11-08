@@ -1,11 +1,11 @@
-# GreenMate 版本记录（Version Record）
+# ThermoGuard 版本记录（Version Record）
 
 | 项 | 值 |
 |---|---|
 | app_version | B08_baseline_01 |
 | model_version | rf_v1 |
-| git tag | v1.0-final |
-| 冻结日期 | 2026-10-21 |
+| git tag | v2.0-thermoguard-final |
+| 冻结日期 | 2026-11-07 |
 
 ## 本次冻结内容
 

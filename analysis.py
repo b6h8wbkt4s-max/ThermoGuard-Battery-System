@@ -663,7 +663,7 @@ def run_to_markdown(run):
     comp = j.get("evidence_completeness") or {}
 
     lines = [
-        "# GreenMate 分析运行报告",
+        "# ThermoGuard 分析运行报告",
         "",
         f"- **run_id**：{run['run_id']}",
         f"- **分析时刻**：{run['analysis_time']}",

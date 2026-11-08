@@ -17,4 +17,8 @@ static/uploads/*
 03_复现指南/
 04_演示视频/
 05_技术文档/
-GreenMate_B08_Evidence/
+
+# 本地草稿与调试脚本（不入仓库）
+scripts/
+test_llm.py
+Presentation_Outline.md

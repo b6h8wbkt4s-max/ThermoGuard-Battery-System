@@ -44,7 +44,18 @@ copy .env.example .env     # Windows
 python simulate_data.py
 ```
 
-### 4. 启动 Web 服务
+### 4. 生成 ML 模型（关键）
+
+模型文件不入 Git 仓库，需由以下两个脚本从历史数据生成（先滑动窗口特征工程与时间切分，再训练 RandomForest）：
+
+```bash
+python ml_pipeline.py
+python train_model.py
+```
+
+完成后应生成 models/attention_model.pkl 与 models/features.json。
+
+### 5. 启动 Web 服务
 
 ```bash
 uvicorn main:app --reload --port 8080
@@ -52,10 +63,10 @@ uvicorn main:app --reload --port 8080
 
 在浏览器中访问：http://127.0.0.1:8080
 
-### 5. 随包文件说明
+### 6. 随包文件说明
 
 - 历史数据库：运行 simulate_data.py 后自动在当前目录生成 sensor.db。
-- ML 模型：已随包提供，位于 models/attention_model.pkl。
+- ML 模型：由第 4 步两个脚本生成（models/attention_model.pkl）；ZIP 随包版已附带生成结果，可直接使用。
 - 测试图片：已随包提供，位于 static/uploads/test_image.jpg（用于 YOLO 视觉验证）。
 - YOLO 权重：如项目根目录无 yolo11n.pt，首次调用视觉工具时系统会自动从网络下载。
 
